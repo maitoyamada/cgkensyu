@@ -1,132 +1,106 @@
 #include <GL/glut.h>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <vector>
+#include <math.h>
 
-using namespace std;
-
-struct Model {
-  vector<GLfloat> vertices;  
-  vector<GLfloat> normals;   
-  vector<GLuint> indices;    
+struct Vertex {
+  float x, y, z;
 };
 
+struct Face {
+  int v1, v2, v3;
+};
 
-Model loadObj(const char* filename) {
-  Model model;
+std::vector<Vertex> vertices;
+std::vector<Face> faces;
 
-  ifstream ifs(filename);
-  if (!ifs) {
-    cerr << "Error: Cannot open file " << filename << endl;
+void load_obj(const char *filename) {
+  std::ifstream file(filename);
+  if (!file) {
+    std::cerr << "Error opening OBJ file: " << filename << std::endl;
     exit(1);
   }
 
-  vector<GLfloat> vertices;
-  vector<GLfloat> normals;
-  vector<GLuint> indices;
-
-  string line;
-  while (getline(ifs, line)) {
-    if (line[0] == 'v' && line[1] == ' ') {
-      GLfloat x, y, z;
-      sscanf(line.c_str(), "v %f %f %f", &x, &y, &z);
-      vertices.push_back(x);
-      vertices.push_back(y);
-      vertices.push_back(z);
-    } else if (line[0] == 'v' && line[1] == 'n') {
-      GLfloat nx, ny, nz;
-      sscanf(line.c_str(), "vn %f %f %f", &nx, &ny, &nz);
-      normals.push_back(nx);
-      normals.push_back(ny);
-      normals.push_back(nz);
-    } else if (line[0] == 'f' && line[1] == ' ') {
-      GLuint v1, v2, v3, n1, n2, n3;
-      sscanf(line.c_str(), "f %u//%u %u//%u %u//%u", &v1, &n1, &v2, &n2, &v3, &n3);
-      indices.push_back(v1 - 1);
-      indices.push_back(v2 - 1);
-      indices.push_back(v3 - 1);
+  std::string line;
+  while (std::getline(file, line)) {
+    if (line.substr(0, 2) == "v ") {
+      std::istringstream s(line.substr(2));
+      Vertex v;
+      s >> v.x; s >> v.y; s >> v.z;
+      vertices.push_back(v);
+    } else if (line.substr(0, 2) == "f ") {
+      std::istringstream s(line.substr(2));
+      Face f;
+      s >> f.v1; s >> f.v2; s >> f.v3;
+      faces.push_back(f);
     }
   }
 
-  model.vertices = vertices;
-  model.normals = normals;
-  model.indices = indices;
-
-  return model;
+  file.close();
 }
-
-
-void drawModel(const Model& model) {
-  glBegin(GL_TRIANGLES);
-
-  for (int i = 0; i < model.indices.size(); i++) {
-    GLuint index = model.indices[i];
-    GLuint normalIndex = 3 * index;
-
-
-    glNormal3f(model.normals[normalIndex], model.normals[normalIndex + 1], model.normals[normalIndex + 2]);
-
-
-    GLuint vertexIndex = 3 * index;
-    glVertex3f(model.vertices[vertexIndex], model.vertices[vertexIndex + 1], model.vertices[vertexIndex + 2]);
-  }
-
-  glEnd();
-}
-
-void setupLighting() {
-  GLfloat ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f};
-    GLfloat diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f };
-GLfloat specular[] = { 0.5f, 0.5f, 0.5f, 1.0f };
-GLfloat position[] = { 0.0f, 0.0f, 1.0f, 0.0f };
-
-glShadeModel(GL_SMOOTH);
-glEnable(GL_LIGHTING);
-glEnable(GL_LIGHT0);
-glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
-glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
-glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
-glLightfv(GL_LIGHT0, GL_POSITION, position);
-}
-
 
 void display() {
-glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  glEnable(GL_DEPTH_TEST); 
+  glEnable(GL_LIGHTING);  
+  glEnable(GL_LIGHT0);     
+  glEnable(GL_NORMALIZE);
+  glShadeModel(GL_SMOOTH); 
 
+  glLoadIdentity();
+  gluLookAt(0, 0, 0.5, 0, 0, 0, 0, 1, 0);
 
-gluLookAt(0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0);
+  glBegin(GL_TRIANGLES);
+  for (const Face &face : faces) {
+    const Vertex &v1 = vertices[face.v1 - 1];
+    const Vertex &v2 = vertices[face.v2 - 1];
+    const Vertex &v3 = vertices[face.v3 - 1];
+    const float nx = (v2.y - v1.y) * (v3.z - v1.z) - (v2.z - v1.z) * (v3.y - v1.y);
+    const float ny = (v2.z - v1.z) * (v3.x - v1.x) - (v2.x - v1.x) * (v3.z - v1.z);
+    const float nz = (v2.x - v1.x) * (v3.y - v1.y) - (v2.y - v1.y) * (v3.x - v1.x);
+    const float len = std::sqrt(nx * nx + ny * ny + nz * nz);
+    const float nnx = nx / len;
+    const float nny = ny / len;
+    const float nnz = nz / len;
 
-
-Model model = loadObj("model.obj");
-drawModel(model);
+    
+glNormal3f(nnx, nny, nnz);
+glVertex3f(v1.x, v1.y, v1.z);
+glVertex3f(v2.x, v2.y, v2.z);
+glVertex3f(v3.x, v3.y, v3.z);
+}
+glEnd();
 
 glutSwapBuffers();
 }
-
-
-void init() {
-glClearColor(0.0, 0.0, 0.0, 0.0);
-glEnable(GL_DEPTH_TEST);
-setupLighting();
-}
-
 
 void reshape(int w, int h) {
 glViewport(0, 0, w, h);
 glMatrixMode(GL_PROJECTION);
 glLoadIdentity();
-gluPerspective(45.0, (double)w / h, 0.1, 100.0);
+gluPerspective(60, (float) w / (float) h, 0.1, 100.0); 
 glMatrixMode(GL_MODELVIEW);
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char *argv[]) {
 glutInit(&argc, argv);
 glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH);
-glutInitWindowSize(640, 480);
-glutCreateWindow("bunny 5-2");
+glutInitWindowSize(800, 600);
+glutInitWindowPosition(100, 100);
+glutCreateWindow("Bunny OBJ Viewer");
+
 glutDisplayFunc(display);
 glutReshapeFunc(reshape);
-init();
+
+load_obj("bunny.obj");
+
+glEnable(GL_CULL_FACE);
+glCullFace(GL_BACK);
+
 glutMainLoop();
+
 return 0;
 }
+                                                                                                                                                                                                                          // 背面カリングを有効にする                                                                                             glEnable(GL_CULL_FACE);                                                                                                 glCullFace(GL_BACK);                                                                                                                                                                                                                            glutMainLoop();                                                                                                                                                                                                                                 return 0;                                                                                                               }
